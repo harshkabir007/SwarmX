@@ -66,5 +66,12 @@ Every robot runs its own Nav2 stack and SwarmX agent. The only shared traffic is
 | 3 | random | **AMCL** | direct | 6/6 | 181 s | 0 | 0.69 m |
 | 3 | random | ground truth | **Nav2** (RPP) | 6/6 | 280 s | 0 | 0.80 m |
 | 5 | **crossing** | ground truth | direct | 10/10 | 137 s | 0 | 0.80 m |
+| 3 | random + **physical pallet** dropped into aisle (12,6) at 45 s | ground truth | direct | 8/8 | 224 s | 0 | 0.76 m |
+| 3 | random | **slam_toolbox mapping** (each robot maps on its own) | direct | 6/6 | 220 s | 0 | 0.71 m |
+
+In the pallet run, robots 2 and 3 found the box with their own lidar, at exactly cell (12,6), with no
+hint from the dashboard. They shared it P2P and the fleet routed around it. In the SLAM run the pose was
+noisier than AMCL on a known map, so the lidar produced 17 spurious obstacle reports. These expire through
+the report time-to-live and did not stop delivery, but AMCL on a known map is the recommended production mode.
 
 AMCL in rack aisles needed all 360 beams and a low odometry-noise model. With Nav2's defaults (60 beams, alpha 0.2) it slid up to 4.5 m along the featureless aisles. Real deployments of such warehouses usually add fiducials or reflectors.

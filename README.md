@@ -73,7 +73,7 @@ ros2 launch swarmx_bringup sim_fleet.launch.py robots:=5 scenario:=crossing loca
 
 Useful launch arguments:
 
-- `localization:=static|amcl|slam_toolbox`
+- `localization:=static|amcl|slam_mapping|slam_toolbox`
 - `executor:=direct|nav2`: in `direct`, SwarmX drives through Nav2's smoother and collision monitor; in `nav2`, Nav2 plans and tracks the waypoints SwarmX releases.
 - `tasks`, `scenario`, `headless_rendering`
 
@@ -122,6 +122,8 @@ task claiming, all collision-free.
 - 3 robots with **AMCL**: 6/6 delivered, 0 contacts.
 - 3 robots with the **Nav2 executor**: 6/6 delivered, 0 contacts.
 - 5 robots on **overlapping paths**: 10/10 delivered, 0 contacts.
+- A **physical pallet** dropped mid-run and found by the robots' lidar: 8/8 delivered, 0 contacts.
+- **slam_toolbox** mapping (each robot maps independently): 6/6 delivered, 0 contacts.
 
 Full details and reproduction commands are in [docs/RESULTS.md](docs/RESULTS.md).
 
@@ -151,7 +153,7 @@ Full details and reproduction commands are in [docs/RESULTS.md](docs/RESULTS.md)
   - The Gazebo fleet with ground-truth and AMCL localization and with the direct and Nav2 executors, over rmw_zenoh with one router per host.
   - The dashboard, in simulation and ROS modes.
   - ARGoS at 10, 30 and 50 robots.
-- **Written but not yet exercised end-to-end:** slam_toolbox mapping and localization, and physical pallets spawned from the ROS dashboard (`gz service`).
+- **Written but not yet exercised end-to-end:** slam_toolbox *localization* on a serialized pose graph. Mapping is verified; localization on a saved graph has not been run.
 - **AMCL in rack aisles** needs all beams and a low odometry-noise model (tuned in `swarmx_navigation/config/localization.yaml`). Real warehouses usually add fiducials or reflectors.
 - **Pure router-less Zenoh peer mode** (`swarmx_zenoh_peer.env`) works for small graphs. With about 40 processes on one host, some peers missed discovery, which is why the router-per-robot topology is the default.
 - **The lightweight simulator uses holonomic discs.** Differential-drive behaviour is exercised in Gazebo and ARGoS.

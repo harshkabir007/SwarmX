@@ -9,7 +9,7 @@ IMAGE="${IMAGE:-swarmx-deps:jazzy}"
 docker image inspect "$IMAGE" >/dev/null 2>&1 || docker build -f "$ROOT/docker/Dockerfile.deps" -t "$IMAGE" "$ROOT/docker"
 exec docker run --rm \
   -e ROBOTS="${ROBOTS:-3}" -e TASKS="${TASKS:-6}" -e LOC="${LOC:-static}" -e EXEC="${EXEC:-direct}" \
-  -e SCEN="${SCEN:-random}" -e TIMEOUT="${TIMEOUT:-600}" \
+  -e SCEN="${SCEN:-random}" -e TIMEOUT="${TIMEOUT:-600}" -e PALLET="${PALLET:-}" -e PALLET_AT="${PALLET_AT:-60}" \
   -v "$ROOT/ros2_ws/src:/ws/src:ro" -v "$ROOT/scripts:/scripts:ro" "$IMAGE" bash -c '
     source /opt/ros/jazzy/setup.bash
     cd /ws && colcon build > /tmp/build.log 2>&1 || { tail -30 /tmp/build.log; exit 1; }
