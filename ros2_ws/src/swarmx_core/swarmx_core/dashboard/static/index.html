@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwarmX fleet</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="3"/><circle cx="18" cy="7" r="3"/><circle cx="12" cy="17" r="3"/><path d="M6 7 18 7 12 17Z"/></svg>
+    <h1>SwarmX fleet</h1>
+    <span id="source" class="chip"></span>
+  </div>
+  <div id="conn" class="conn" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="conn-text">Connecting…</span></div>
+</header>
+
+<section id="controls" class="controls" aria-label="Fleet controls"></section>
+
+<section class="tiles" aria-label="Fleet metrics">
+  <div class="tile hero">
+    <div class="label">Tasks delivered</div>
+    <div class="value" id="m-delivered">–</div>
+    <div class="sub" id="m-delivered-sub">&nbsp;</div>
+  </div>
+  <div class="tile">
+    <div class="label">Throughput</div>
+    <div class="value" id="m-throughput">–</div>
+    <div class="sub">deliveries in the last minute</div>
+  </div>
+  <div class="tile">
+    <div class="label">Tasks waiting</div>
+    <div class="value" id="m-pending">–</div>
+    <div class="sub" id="m-assigned">&nbsp;</div>
+  </div>
+  <div class="tile">
+    <div class="label">Robots online</div>
+    <div class="value" id="m-robots">–</div>
+    <div class="sub" id="m-robots-sub">&nbsp;</div>
+  </div>
+  <div class="tile">
+    <div class="label">Average battery</div>
+    <div class="value" id="m-battery">–</div>
+    <div class="meter" aria-hidden="true"><div class="fill" id="m-battery-fill"></div></div>
+  </div>
+  <div class="tile" id="tile-collisions">
+    <div class="label">Inter-robot collisions</div>
+    <div class="value" id="m-collisions">–</div>
+    <div class="sub status" id="m-collisions-sub">&nbsp;</div>
+  </div>
+  <div class="tile">
+    <div class="label">Peer-to-peer traffic</div>
+    <div class="value" id="m-msgs">–</div>
+    <div class="sub" id="m-kbps">&nbsp;</div>
+  </div>
+</section>
+
+<main class="layout">
+  <section class="card map-card" aria-labelledby="map-title">
+    <header class="card-head">
+      <h2 id="map-title">Warehouse floor</h2>
+      <span class="hint" id="map-hint">Hover a robot, aisle or task for details</span>
+    </header>
+    <div class="map-wrap" id="map-wrap">
+      <canvas id="map" role="img" aria-label="Live map of the warehouse and robot positions"></canvas>
+      <div id="tip" class="tooltip" role="tooltip" hidden></div>
+    </div>
+    <ul class="legend" id="legend" aria-label="Map legend"></ul>
+  </section>
+
+  <section class="card fleet-card" aria-labelledby="fleet-title">
+    <header class="card-head"><h2 id="fleet-title">Fleet</h2><span class="hint" id="fleet-hint"></span></header>
+    <div class="table-scroll">
+      <table class="fleet" id="fleet">
+        <thead><tr><th scope="col">Robot</th><th scope="col">State</th><th scope="col">Task</th><th scope="col">Battery</th><th scope="col" class="num">Done</th><th scope="col" class="num">Last heard</th><th scope="col" id="fleet-actions-h"><span class="sr">Actions</span></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card chart-card" aria-labelledby="chart-title">
+    <header class="card-head">
+      <h2 id="chart-title">Deliveries over time</h2>
+      <button type="button" class="ghost" id="chart-toggle" aria-pressed="false">Table view</button>
+    </header>
+    <div id="chart" class="chart" tabindex="0" aria-label="Cumulative deliveries over time. Use left and right arrow keys to read values."></div>
+    <div class="table-scroll" id="chart-table-wrap" hidden>
+      <table class="fleet"><thead><tr><th scope="col">Time</th><th scope="col" class="num">Delivered</th></tr></thead><tbody id="chart-table"></tbody></table>
+    </div>
+  </section>
+
+  <section class="card log-card" aria-labelledby="log-title">
+    <header class="card-head"><h2 id="log-title">Events</h2></header>
+    <ol class="log" id="log" aria-live="off"></ol>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

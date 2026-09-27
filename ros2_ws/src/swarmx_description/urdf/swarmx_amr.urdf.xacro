@@ -1,0 +1,189 @@
+<?xml version="1.0"?>
+<!--
+  SwarmX AMR: 0.56 m round differential-drive base (footprint radius 0.3 m incl. bumper),
+  2D 360 deg lidar on top, IMU. Topics are namespaced so any number of robots can share
+  one Gazebo world; TF frames are *unprefixed* and published on /<ns>/tf (the standard
+  Nav2 multi-robot layout).
+-->
+<robot name="swarmx_amr" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="namespace" default="robot1"/>
+  <xacro:arg name="lidar_rate" default="10"/>
+  <!-- ground_truth_odom: odom->base_footprint from the simulator's true pose (no wheel slip drift).
+       Set false to use drifting wheel odometry (realistic; requires AMCL / slam_toolbox). -->
+  <xacro:arg name="ground_truth_odom" default="true"/>
+  <xacro:property name="ns" value="$(arg namespace)"/>
+
+  <xacro:property name="base_r" value="0.28"/>
+  <xacro:property name="base_h" value="0.30"/>
+  <xacro:property name="wheel_r" value="0.05"/>
+  <xacro:property name="wheel_w" value="0.03"/>
+  <xacro:property name="wheel_sep" value="0.40"/>
+  <xacro:property name="base_z" value="0.05"/>
+
+  <xacro:macro name="cyl_inertia" params="m r h">
+    <inertia ixx="${m*(3*r*r+h*h)/12}" ixy="0" ixz="0" iyy="${m*(3*r*r+h*h)/12}" iyz="0" izz="${m*r*r/2}"/>
+  </xacro:macro>
+
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${base_h/2}"/>
+      <geometry><cylinder radius="${base_r}" length="${base_h}"/></geometry>
+      <material name="swarmx_blue"><color rgba="0.16 0.47 0.84 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${base_h/2}"/>
+      <geometry><cylinder radius="${base_r}" length="${base_h}"/></geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 ${base_h/2}"/>
+      <mass value="12.0"/>
+      <xacro:cyl_inertia m="12.0" r="${base_r}" h="${base_h}"/>
+    </inertial>
+  </link>
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/><child link="base_link"/>
+    <origin xyz="0 0 ${base_z}"/>
+  </joint>
+
+  <!-- load deck marker so heading is visible in Gazebo/RViz -->
+  <link name="deck_link">
+    <visual>
+      <origin xyz="0.14 0 0"/>
+      <geometry><box size="0.12 0.2 0.01"/></geometry>
+      <material name="swarmx_orange"><color rgba="0.92 0.41 0.20 1"/></material>
+    </visual>
+  </link>
+  <joint name="deck_joint" type="fixed">
+    <parent link="base_link"/><child link="deck_link"/>
+    <origin xyz="0 0 ${base_h + 0.005}"/>
+  </joint>
+
+  <xacro:macro name="wheel" params="side y">
+    <link name="${side}_wheel">
+      <visual>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_r}" length="${wheel_w}"/></geometry>
+        <material name="swarmx_dark"><color rgba="0.15 0.15 0.15 1"/></material>
+      </visual>
+      <collision>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_r}" length="${wheel_w}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.5"/>
+        <inertia ixx="0.0004" ixy="0" ixz="0" iyy="0.0006" iyz="0" izz="0.0004"/>
+      </inertial>
+    </link>
+    <joint name="${side}_wheel_joint" type="continuous">
+      <parent link="base_link"/><child link="${side}_wheel"/>
+      <origin xyz="0 ${y} 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+  <xacro:wheel side="left" y="${wheel_sep/2}"/>
+  <xacro:wheel side="right" y="${-wheel_sep/2}"/>
+
+  <xacro:macro name="caster" params="name x">
+    <link name="${name}_caster">
+      <visual><geometry><sphere radius="${wheel_r - 0.001}"/></geometry></visual>
+      <collision><geometry><sphere radius="${wheel_r - 0.001}"/></geometry></collision>
+      <inertial><mass value="0.1"/><inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/></inertial>
+    </link>
+    <joint name="${name}_caster_joint" type="fixed">
+      <parent link="base_link"/><child link="${name}_caster"/>
+      <origin xyz="${x} 0 0.0"/>
+    </joint>
+    <gazebo reference="${name}_caster">
+      <collision><surface><friction><ode><mu>0.0</mu><mu2>0.0</mu2></ode></friction></surface></collision>
+    </gazebo>
+  </xacro:macro>
+  <xacro:caster name="front" x="0.2"/>
+  <xacro:caster name="rear" x="-0.2"/>
+
+  <link name="lidar_link">
+    <inertial><mass value="0.2"/><inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/></inertial>
+  </link>
+  <!-- lidar sits inside the top of the body: the scan plane (z ~0.27 m) cuts through other
+       robots' bodies so they are visible to each other; self-returns fall below min range -->
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/><child link="lidar_link"/>
+    <origin xyz="0 0 ${base_h - 0.08}"/>
+  </joint>
+
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/><child link="imu_link"/>
+    <origin xyz="0 0 0.05"/>
+  </joint>
+
+  <!-- ============================ Gazebo Harmonic ============================ -->
+  <gazebo>
+    <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>${wheel_sep}</wheel_separation>
+      <wheel_radius>${wheel_r}</wheel_radius>
+      <max_linear_acceleration>1.5</max_linear_acceleration>
+      <min_linear_acceleration>-1.5</min_linear_acceleration>
+      <max_angular_acceleration>4.0</max_angular_acceleration>
+      <min_angular_acceleration>-4.0</min_angular_acceleration>
+      <max_linear_velocity>1.0</max_linear_velocity>
+      <min_linear_velocity>-0.5</min_linear_velocity>
+      <max_angular_velocity>2.5</max_angular_velocity>
+      <min_angular_velocity>-2.5</min_angular_velocity>
+      <topic>/${ns}/cmd_vel</topic>
+      <xacro:if value="$(arg ground_truth_odom)">
+        <odom_topic>/${ns}/wheel_odom</odom_topic>
+        <tf_topic>/${ns}/wheel_tf</tf_topic>
+      </xacro:if>
+      <xacro:unless value="$(arg ground_truth_odom)">
+        <odom_topic>/${ns}/odom</odom_topic>
+        <tf_topic>/${ns}/tf</tf_topic>
+      </xacro:unless>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      <odom_publish_frequency>30</odom_publish_frequency>
+    </plugin>
+    <xacro:if value="$(arg ground_truth_odom)">
+      <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
+        <odom_frame>odom</odom_frame>
+        <robot_base_frame>base_footprint</robot_base_frame>
+        <odom_publish_frequency>30</odom_publish_frequency>
+        <odom_topic>/${ns}/odom</odom_topic>
+        <tf_topic>/${ns}/tf</tf_topic>
+        <dimensions>2</dimensions>
+      </plugin>
+    </xacro:if>
+    <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+      <topic>/${ns}/joint_states</topic>
+    </plugin>
+  </gazebo>
+
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>/${ns}/scan</topic>
+      <gz_frame_id>lidar_link</gz_frame_id>
+      <update_rate>$(arg lidar_rate)</update_rate>
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <lidar>
+        <scan>
+          <horizontal><samples>360</samples><resolution>1</resolution><min_angle>-3.14159</min_angle><max_angle>3.14159</max_angle></horizontal>
+        </scan>
+        <range><min>0.32</min><max>12.0</max><resolution>0.01</resolution></range>
+        <noise><type>gaussian</type><mean>0.0</mean><stddev>0.01</stddev></noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+  <gazebo reference="imu_link">
+    <sensor name="imu" type="imu">
+      <topic>/${ns}/imu</topic>
+      <gz_frame_id>imu_link</gz_frame_id>
+      <update_rate>50</update_rate>
+      <always_on>true</always_on>
+    </sensor>
+  </gazebo>
+</robot>

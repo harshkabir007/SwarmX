@@ -1,0 +1,14 @@
+# ARGoS3 (built from source) for SwarmX large-scale swarm experiments
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates git cmake g++ make pkg-config \
+      libfreeimage-dev libfreeimageplus-dev qtbase5-dev libqt5opengl5-dev \
+      freeglut3-dev libxi-dev libxmu-dev liblua5.3-dev lua5.3 libgraphviz-dev graphviz python3 \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/ilpincy/argos3.git /opt/argos3-src \
+    && mkdir /opt/argos3-src/build_simulator && cd /opt/argos3-src/build_simulator \
+    && cmake ../src -DCMAKE_BUILD_TYPE=Release -DARGOS_DOCUMENTATION=OFF -DARGOS_BUILD_FOR=simulator \
+         -DARGOS_WITH_LUA=ON -DCMAKE_INSTALL_PREFIX=/usr/local \
+    && make -j"$(nproc)" && make install && ldconfig
+WORKDIR /swarmx

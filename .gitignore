@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# colcon
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# ARGoS (build output and generated experiments/results)
+argos/build/
+argos/results/
+argos/experiments/*
+!argos/experiments/.gitkeep
+
+# benchmark output
+results/
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

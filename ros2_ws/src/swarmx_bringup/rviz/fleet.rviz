@@ -1,0 +1,45 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Map
+      Name: Map
+      Topic:
+        Value: /robot1/map
+        Durability Policy: Transient Local
+    - Class: rviz_default_plugins/MarkerArray
+      Name: robot1
+      Topic:
+        Value: /robot1/swarmx/markers
+    - Class: rviz_default_plugins/MarkerArray
+      Name: robot2
+      Topic:
+        Value: /robot2/swarmx/markers
+    - Class: rviz_default_plugins/MarkerArray
+      Name: robot3
+      Topic:
+        Value: /robot3/swarmx/markers
+    - Class: rviz_default_plugins/MarkerArray
+      Name: robot4
+      Topic:
+        Value: /robot4/swarmx/markers
+    - Class: rviz_default_plugins/MarkerArray
+      Name: robot5
+      Topic:
+        Value: /robot5/swarmx/markers
+    - Class: rviz_default_plugins/LaserScan
+      Name: robot1 scan
+      Topic:
+        Value: /robot1/scan
+        Reliability Policy: Best Effort
+      Size (m): 0.05
+  Global Options:
+    Fixed Frame: map
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Scale: 30
+      X: 17
+      Y: 10
