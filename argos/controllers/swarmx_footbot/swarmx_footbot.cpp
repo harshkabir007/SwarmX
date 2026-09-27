@@ -161,9 +161,24 @@ void CSwarmXFootbot::Init(TConfigurationNode& t_node) {
   GetNodeAttributeOrDefault(t_node, "max_speed", m_fMaxSpeed, m_fMaxSpeed);
   m_bStopWait = (mode == "stopwait");
   m_cGrid.Load(map);
+  m_cGrid.hard_lanes = m_bStopWait;  // traditional fleets run strict one-way lanes; SwarmX treats them as soft
   const std::string& id = GetId();
   m_nIndex = std::stoi(id.substr(id.find_first_of("0123456789")));
   m_pcRNG = CRandom::CreateRNG("argos");
+  // parking cells: open areas left/right of the racks, away from stations, aisles and aisle mouths
+  std::vector<swarmx::Cell> keepout(m_cGrid.dropoffs);
+  for (const swarmx::Zone& z : m_cGrid.zones) { keepout.push_back(z.south()); keepout.push_back(z.north()); }
+  int rack_x0 = m_cGrid.width, rack_x1 = 0;
+  for (const swarmx::Zone& z : m_cGrid.zones) { rack_x0 = std::min(rack_x0, z.x - 1); rack_x1 = std::max(rack_x1, z.x + 1); }
+  for (int y = 1; y < m_cGrid.height - 1; ++y)
+    for (int x = 1; x < m_cGrid.width - 1; ++x) {
+      swarmx::Cell c{x, y};
+      if (!m_cGrid.Free(c) || m_cGrid.ZoneOf(c) >= 0 || (x >= rack_x0 && x <= rack_x1)) continue;
+      if (x <= 2 || x >= m_cGrid.width - 3) continue;  // drop-off / charger columns and their approach lanes
+      bool near = false;
+      for (const swarmx::Cell& k : keepout) near |= std::abs(k.x - x) <= 1 && std::abs(k.y - y) <= 1;
+      if (!near) m_vParkCells.push_back(c);
+    }
   Reset();
 }
 
@@ -176,6 +191,7 @@ void CSwarmXFootbot::Reset() {
   m_nZoneState = 0;
   m_mapNbrs.clear();
   m_unTick = 0;
+  m_bParking = false;
 }
 
 /* ------------------------------------------------------------------ comms */
@@ -256,6 +272,7 @@ void CSwarmXFootbot::Allocate() {
     m_nTask = best;
     m_fBid = bbid;
     m_eState = EState::TO_PICKUP;
+    m_bParking = false;
   }
 }
 
@@ -287,6 +304,45 @@ double CSwarmXFootbot::DistAlong(int idx) const {
   for (int i = m_nRouteIdx; i < idx; ++i)
     d += std::hypot(m_vRoute[i + 1].x - m_vRoute[i].x, m_vRoute[i + 1].y - m_vRoute[i].y) * m_cGrid.cell;
   return d;
+}
+
+void CSwarmXFootbot::ReleaseZoneIfClear() {
+  if (m_nZone < 0) return;
+  if (m_nZoneState == 1) {  // a claim left over after the route was dropped must not block others
+    if (m_vRoute.empty()) { m_nZone = -1; m_nZoneState = 0; }
+    return;
+  }
+  const swarmx::Zone& z = m_cGrid.zones[m_nZone];
+  double cx = (z.x + 0.5) * m_cGrid.cell, y0 = z.y0 * m_cGrid.cell, y1 = (z.y1 + 1) * m_cGrid.cell;
+  double dy = std::max({y0 - m_fY, 0.0, m_fY - y1}), dx = std::fabs(m_fX - cx) - 0.5 * m_cGrid.cell;
+  if (std::hypot(std::max(dx, 0.0), dy) > m_fRadius + 0.03) { m_nZone = -1; m_nZoneState = 0; }
+}
+
+/* Idle robots leave stations and aisles and wait in an open-area parking cell. */
+void CSwarmXFootbot::Park() {
+  auto taken = [&](const swarmx::Cell& c) {
+    double cx, cy;
+    m_cGrid.Center(c, cx, cy);
+    for (const auto& kv : m_mapNbrs)
+      if (std::hypot(kv.second.x - cx, kv.second.y - cy) < 0.6 * m_cGrid.cell) return true;
+    return false;
+  };
+  if (m_bParking) {
+    bool arrived = !m_vRoute.empty() && m_nRouteIdx >= static_cast<int>(m_vRoute.size()) - 1 && NearCell(m_cPark, 0.3 * m_cGrid.cell);
+    if (arrived) { m_vRoute.clear(); return; }
+    if (m_vRoute.empty() && NearCell(m_cPark, 0.5 * m_cGrid.cell)) return;          // parked
+    if (!(taken(m_cPark) && !NearCell(m_cPark, m_cGrid.cell)) && !m_vRoute.empty()) return;  // still on the way
+  }
+  swarmx::Cell here = m_cGrid.CellOf(m_fX, m_fY);
+  const swarmx::Cell* best = nullptr;
+  int bd = 1 << 30;
+  for (const swarmx::Cell& c : m_vParkCells) {
+    int d = std::abs(c.x - here.x) + std::abs(c.y - here.y) + (m_nIndex * 7 + c.x * 3 + c.y) % 3;  // spread ties
+    if (d < bd && !taken(c)) { bd = d; best = &c; }
+  }
+  if (best == nullptr) { m_vRoute.clear(); return; }
+  m_cPark = *best;
+  m_bParking = PlanTo(m_cPark);
 }
 
 bool CSwarmXFootbot::NearCell(const swarmx::Cell& c, double tol) const {
@@ -323,12 +379,11 @@ int CSwarmXFootbot::UpdateZones(int limit) {
   }
   double dEntry = DistAlong(zs);
   int stop = std::max(zs - 2, m_nRouteIdx);
-  double lookahead = m_bStopWait ? 0.6 * m_cGrid.cell : 6.0 * m_cGrid.cell;
-  if (m_bStopWait && !(m_nRouteIdx >= zs - 2 && NearCell(m_vRoute[std::max(zs - 2, 0)], 0.25 * m_cGrid.cell))
-      && m_nRouteIdx < zs - 2) {
-    return std::min(limit, stop);  // traditional: drive to the mouth, stop, only then request
-  }
-  if (dEntry > lookahead) return limit;
+  double lookahead = 6.0 * m_cGrid.cell;
+  bool at_wait = zs - 2 < 0 || m_nRouteIdx > zs - 2 ||
+                 (m_nRouteIdx == zs - 2 && NearCell(m_vRoute[zs - 2], 0.3 * m_cGrid.cell));
+  if (m_bStopWait && !at_wait) return std::min(limit, stop);  // traditional: drive to the wait point first
+  if (!m_bStopWait && dEntry > lookahead) return limit;
   if (m_nZone != zid || m_nZoneState == 0) {
     m_nZone = zid;
     m_nZoneState = 1;
@@ -344,7 +399,7 @@ int CSwarmXFootbot::UpdateZones(int limit) {
     if (n.zstate == 1 && (n.zkey < m_fZoneKey || (n.zkey == m_fZoneKey && kv.first < m_nIndex))) ok = false;
   }
   if (ok) {
-    if (dEntry <= 1.6 * m_cGrid.cell || m_nRouteIdx >= zs - 1) m_nZoneState = 2;
+    if (m_bStopWait || dEntry <= 1.6 * m_cGrid.cell || m_nRouteIdx >= zs - 1) m_nZoneState = 2;
     return limit;
   }
   ++m_nZoneWaitTicks;
@@ -367,6 +422,21 @@ void CSwarmXFootbot::Drive(int limit) {
     }
   }
   if (m_unTick < m_unJitterUntil) pref = Add(pref, V{m_fJx, m_fJy});
+  if (!m_bStopWait) {  // keep right for oncoming traffic
+    double sp = std::sqrt(AbsSq(pref)), bias = 0;
+    if (sp > 0.02) {
+      double hx = pref.first / sp, hy = pref.second / sp;
+      for (const auto& kv : m_mapNbrs) {
+        const SNeighbour& n = kv.second;
+        double dx = n.x - m_fX, dy = n.y - m_fY, d = std::hypot(dx, dy), ns = std::hypot(n.vx, n.vy);
+        if (d > 1.0 || d < 1e-6 || ns < 0.03) continue;
+        double fwd = dx * hx + dy * hy, lat = -dx * hy + dy * hx;
+        if (fwd > 0 && std::fabs(lat) < 2.5 * m_fRadius && (n.vx * hx + n.vy * hy) / ns < -0.7)
+          bias = std::max(bias, 0.35 * sp * (1.0 - d / 1.0) + 0.1 * sp);
+      }
+      pref = V{pref.first + hy * bias, pref.second - hx * bias};
+    }
+  }
   std::vector<Nbr> nb;
   for (const auto& kv : m_mapNbrs) {
     const SNeighbour& n = kv.second;
@@ -397,7 +467,25 @@ void CSwarmXFootbot::Drive(int limit) {
         if (fwd > 0 && fwd < 3.5 * m_fRadius && lat < 2.4 * m_fRadius) { stop = true; m_nStopFor = kv.first; }
       }
     }
-    v = stop ? V{0, 0} : Orca(V{m_fX, m_fY}, V{m_fVx, m_fVy}, pref, m_fRadius + m_fMargin, m_fMaxSpeed, {}, walls);
+    if (!stop) { m_unStoppedSince = m_unTick; m_nBlocker = -1; }
+    else if (m_nBlocker != m_nStopFor) { m_nBlocker = m_nStopFor; m_unStoppedSince = m_unTick; }
+    if (stop && m_unTick > m_unBackoffUntil) {
+      // traditional deadlock breaking: in a mutual block the higher index backs off; any robot
+      // blocked for too long backs off too
+      auto it = m_mapNbrs.find(m_nBlocker);
+      bool mutual = it != m_mapNbrs.end() && it->second.stop_for == m_nIndex;
+      UInt32 waited = m_unTick - m_unStoppedSince;
+      if ((mutual && m_nIndex > m_nBlocker && waited > 20) || waited > 80) m_unBackoffUntil = m_unTick + 15;
+    }
+    if (m_unTick < m_unBackoffUntil && m_nBlocker >= 0 && m_mapNbrs.count(m_nBlocker)) {
+      const SNeighbour& b = m_mapNbrs[m_nBlocker];
+      V away = Norm(V{m_fX - b.x, m_fY - b.y});
+      V side{-away.second, away.first};
+      v = Orca(V{m_fX, m_fY}, V{m_fVx, m_fVy}, Mul(Add(away, Mul(side, 0.7)), 0.5 * m_fMaxSpeed),
+               m_fRadius + m_fMargin, m_fMaxSpeed, {}, walls);
+    } else {
+      v = stop ? V{0, 0} : Orca(V{m_fX, m_fY}, V{m_fVx, m_fVy}, pref, m_fRadius + m_fMargin, m_fMaxSpeed, {}, walls);
+    }
   } else {
     v = Orca(V{m_fX, m_fY}, V{m_fVx, m_fVy}, pref, m_fRadius + m_fMargin, m_fMaxSpeed, nb, walls);
     // RSS safe-following guard (bounded deceleration + latency)
@@ -426,8 +514,17 @@ void CSwarmXFootbot::Drive(int limit) {
     m_unJitterUntil = m_unTick + 20;
     m_unProgressTick = m_unTick;
     m_fBestRemain = remain;
-    if (m_eState == EState::TO_PICKUP) PlanTo(swarmx::TaskBoard::Get().tasks[m_nTask].pickup);
-    else if (m_eState == EState::TO_DROPOFF) PlanTo(swarmx::TaskBoard::Get().tasks[m_nTask].dropoff);
+    // jam breaker: route around the robots packed around me (other cross aisle), if such a route exists
+    std::vector<swarmx::Cell> jam;
+    for (const auto& kv : m_mapNbrs)
+      if (std::hypot(kv.second.x - m_fX, kv.second.y - m_fY) < 2.5 * m_cGrid.cell) jam.push_back(m_cGrid.CellOf(kv.second.x, kv.second.y));
+    swarmx::Cell goal = m_bParking ? m_cPark
+                        : m_eState == EState::TO_PICKUP ? swarmx::TaskBoard::Get().tasks[m_nTask].pickup
+                                                        : swarmx::TaskBoard::Get().tasks[m_nTask].dropoff;
+    std::vector<swarmx::Cell> alt;
+    std::vector<double> pen(m_cGrid.zones.size(), 0.0);
+    if (m_cGrid.AStar(m_cGrid.CellOf(m_fX, m_fY), goal, alt, pen, jam) && alt.size() > 1) { m_vRoute = alt; m_nRouteIdx = 0; }
+    else PlanTo(goal);
   }
   SetWheels(v.first, v.second);
 }
@@ -479,10 +576,14 @@ void CSwarmXFootbot::ControlStep() {
     default:
       break;
   }
+  if (m_eState == EState::IDLE) Park();  // also covers a task lost mid-route (stale route replaced)
+  ReleaseZoneIfClear();
   bool service = (m_eState == EState::PICKING || m_eState == EState::DROPPING);
-  if (m_vRoute.empty() || service) {
+  if (service) {
     SetWheels(0, 0);
-    if (m_eState == EState::IDLE) m_pcLEDs->SetAllColors(CColor::GRAY50);
+  } else if (m_vRoute.empty()) {
+    Drive(0);  // idle: zero preferred velocity, but ORCA still lets traffic nudge us aside
+    m_pcLEDs->SetAllColors(CColor::GRAY50);
   } else {
     limit = UpdateZones(limit);
     Drive(limit);

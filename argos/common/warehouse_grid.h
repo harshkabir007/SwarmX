@@ -45,6 +45,9 @@ class WarehouseGrid {
   std::vector<Zone> zones;
   std::vector<Cell> pickups, dropoffs, depot;
   std::vector<int> zone_of;       // per cell, -1 if none
+  std::vector<int> lane;          // per cell: +1 eastbound, -1 westbound, 0 free
+  double lane_penalty = 2.0;      // extra cost per cell driven against a lane (soft lanes)
+  bool hard_lanes = false;        // traditional one-way lanes
 
   void Load(const std::string& path) {
     std::ifstream in(path);
@@ -65,6 +68,9 @@ class WarehouseGrid {
     read_cells(pickups);
     read_cells(dropoffs);
     read_cells(depot);
+    lane.assign(width * height, 0);
+    if (in >> tag >> n)
+      for (int i = 0; i < n; ++i) { int x, y, d; in >> x >> y >> d; lane[y * width + x] = d; }
     zone_of.assign(width * height, -1);
     for (const Zone& z : zones)
       for (int y = z.y0; y <= z.y1; ++y) zone_of[y * width + z.x] = z.id;
@@ -130,6 +136,13 @@ class WarehouseGrid {
         if (is_blocked(n) && n != g) continue;
         if (DX[k] && DY[k] && (is_blocked(Cell{c.x + DX[k], c.y}) || is_blocked(Cell{c.x, c.y + DY[k]}))) continue;
         double cost = gs[ci] + ((DX[k] && DY[k]) ? std::sqrt(2.0) : 1.0);
+        if (DX[k]) {
+          int lc = lane[ci], ln = lane[idx(n)];
+          if (lc * DX[k] < 0 || ln * DX[k] < 0) {
+            if (hard_lanes) continue;
+            cost += lane_penalty;
+          }
+        }
         int zn = ZoneOf(n);
         if (zn >= 0 && zn != zc && zn < static_cast<int>(zone_penalty.size())) cost += zone_penalty[zn];
         int ni = idx(n);

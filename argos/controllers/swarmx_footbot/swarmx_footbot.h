@@ -67,6 +67,8 @@ class CSwarmXFootbot : public CCI_Controller {
   void SetWheels(double vx, double vy);
   double DistAlong(int idx) const;
   bool NearCell(const swarmx::Cell& c, double tol) const;
+  void Park();
+  void ReleaseZoneIfClear();
 
   CCI_DifferentialSteeringActuator* m_pcWheels = nullptr;
   CCI_RangeAndBearingActuator* m_pcRABA = nullptr;
@@ -98,6 +100,11 @@ class CSwarmXFootbot : public CCI_Controller {
   double m_fBestRemain = 1e9;
   UInt32 m_unProgressTick = 0, m_unJitterUntil = 0;
   double m_fJx = 0, m_fJy = 0;
+  std::vector<swarmx::Cell> m_vParkCells;  // open-area cells off the traffic lanes and stations
+  bool m_bParking = false;
+  UInt32 m_unStoppedSince = 0, m_unBackoffUntil = 0;
+  int m_nBlocker = -1;
+  swarmx::Cell m_cPark;
 };
 
 #endif

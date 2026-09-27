@@ -58,6 +58,8 @@ def _fleet(context):
              parameters=[{"use_sim_time": True, "tasks": int(lc("tasks")), "scenario": lc("scenario"),
                           "stream_per_min": float(lc("stream_per_min")), "start_delay": 10.0}]),
     ]))
+    actions.append(Node(package="swarmx_fleet", executable="safety_monitor", name="safety_monitor", output="screen",
+                        parameters=[{"use_sim_time": True, "robots": n}]))
     actions.append(Node(package="swarmx_dashboard", executable="dashboard", name="swarmx_dashboard", output="screen",
                         condition=IfCondition(lc("dashboard")),
                         parameters=[{"use_sim_time": True, "port": int(lc("port")), "gazebo_world": "swarmx_warehouse"}]))

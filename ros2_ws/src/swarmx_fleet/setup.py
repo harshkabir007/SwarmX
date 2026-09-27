@@ -22,5 +22,6 @@ setup(
     entry_points={"console_scripts": [
         "fleet_agent = swarmx_fleet.fleet_agent_node:main",
         "task_source = swarmx_fleet.task_source_node:main",
+        "safety_monitor = swarmx_fleet.safety_monitor_node:main",
     ]},
 )

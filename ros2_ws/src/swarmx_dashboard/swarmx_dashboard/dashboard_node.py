@@ -16,8 +16,11 @@ import random
 import subprocess
 import threading
 
+import json
+
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import String
 from swarmx_core import protocol
 from swarmx_core.dashboard.monitor import FleetMonitor
 from swarmx_core.dashboard.server import DashboardServer
@@ -38,6 +41,8 @@ class DashboardNode(Node):
         self.virtual = set()
         self.physical = set()
         self.n_tasks = 0
+        self.safety = None  # ground truth from the simulator's safety monitor, if running
+        self.create_subscription(String, "/swarmx/safety", self._on_safety, 10)
         self.create_timer(0.05, self._pump)
         self.create_timer(8.0, self._refresh_virtual)
         port = int(self.get_parameter("port").value)
@@ -67,8 +72,19 @@ class DashboardNode(Node):
         w["pickups"] = self.wh.pickups
         return w
 
+    def _on_safety(self, msg: String) -> None:
+        try:
+            self.safety = json.loads(msg.data)
+        except ValueError:
+            pass
+
     def _snapshot(self) -> dict:
-        return self.monitor.snapshot(now=self._now())
+        snap = self.monitor.snapshot(now=self._now())
+        if self.safety is not None:
+            snap["sim"] = {"collisions": self.safety.get("collisions", 0),
+                           "min_separation": self.safety.get("min_separation"),
+                           "tasks_total": len(self.monitor.tasks) + len(self.monitor.done)}
+        return snap
 
     # --------------------------------------------------------- commands
     def _command(self, cmd: dict) -> dict:

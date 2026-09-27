@@ -32,6 +32,10 @@ def write_map(wh: Warehouse, cell: float, path: str) -> None:
             f.write(f"{name} {len(cells)}\n")
             for c in cells:
                 f.write(f"{c[0]} {c[1]}\n")
+        lanes = wh.lanes()  # keep-right traffic lanes in the cross aisles (+1 east, -1 west)
+        f.write(f"lanes {len(lanes)}\n")
+        for (x, y), d in sorted(lanes.items()):
+            f.write(f"{x} {y} {d}\n")
 
 
 def start_cells(wh: Warehouse, n: int):
@@ -63,11 +67,16 @@ def main() -> int:
     args = ap.parse_args()
 
     wh = Warehouse(n_aisles=args.aisles)
+    if args.aisles > 8:
+        # larger floors get outbound stations on both sides (a 4-station dock would be the bottleneck)
+        wh.dropoffs = wh.dropoffs + [(wh.width - 2, y) for (_, y) in wh.dropoffs]
     c = args.cell
     os.makedirs(args.out, exist_ok=True)
     tag = f"swarmx_{args.robots}r_{args.aisles}a_{args.mode}_s{args.seed}"
-    map_path = os.path.abspath(os.path.join(args.out, f"map_{args.aisles}a.txt"))
-    write_map(wh, c, map_path)
+    # one map per experiment, written atomically: parallel suite jobs must never read a half-written map
+    map_path = os.path.abspath(os.path.join(args.out, f"map_{tag}.txt"))
+    write_map(wh, c, map_path + ".tmp")
+    os.replace(map_path + ".tmp", map_path)
     boxes = []
     for i, (x0, y0, x1, y1, kind) in enumerate(wh._merged_boxes()):
         sx, sy = (x1 - x0) * c, (y1 - y0) * c
@@ -115,7 +124,8 @@ def main() -> int:
   </arena>
   <physics_engines><dynamics2d id="dyn2d"/></physics_engines>
   <media>
-    <range_and_bearing id="rab" check_occlusions="true"/>
+    <!-- radio model: range-limited, lossy, not blocked by robot bodies (Wi-Fi / UWB, not IR) -->
+    <range_and_bearing id="rab" check_occlusions="false"/>
     <led id="leds"/>
   </media>
 {vis}
