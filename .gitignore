@@ -16,7 +16,8 @@ argos/experiments/*
 !argos/experiments/.gitkeep
 
 # benchmark output
-results/
+/results/
+ros2_ws/src/swarmx_core/results/
 
 # editors / OS
 .vscode/
