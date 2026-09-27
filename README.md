@@ -100,19 +100,30 @@ task claiming, all collision-free.
 | hot aisles | 13.1% | 13.0% | 12.4% |
 | random picks | 13.6% | 14.6% | 9.4% |
 | blocked aisle (pallets dropped mid-run) | 14.2% | 13.3% | 8.4% |
-| robot failure (dies at 30 s, reboots at 150 s) | 15.3% | 9.4% | 9.0% |
+| robot failure (dies at 30 s, reboots at 150 s) | 15.3% | 9.3% | 7.3% |
 
 \* The stop-and-wait fleet gridlocked in some 8-robot crossing runs. Unfinished tasks are charged the time limit.
 
 - **Safety: 0 collisions, 0 aisle entries without a lock and 0 incompatible aisle co-occupancies**, all checked against simulator ground truth.
-- The 20% target is reached on overlapping paths at 8 robots. At 5 robots it comes close (18.8%).
-- At 3 robots, the interference-free "ghost" lower bound shows the baseline loses only about 18% to conflicts, so no coordinator could reach 20% there.
+- The 20% target is reached on overlapping paths at 8 robots on both measures. At 5 robots it is reached for **makespan** (21.4%) but not for the sum of task completion times (18.8%).
+- At 3 robots, stop-and-wait loses only about 20% to conflicts in total, so no coordinator could cut 20% there. SwarmX removes 42–92% of the avoidable delay against the interference-free ghost bound.
 
-Reproduce with `python3 -m swarmx_core.sim.benchmark --seeds 6`. Ablations are available: `--methods swarmx stopwait ghost swarmx_greedy swarmx_no_intent`.
+**Large swarms (ARGoS3, 3 seeds per cell):**
 
-**Gazebo end-to-end (verified in the Docker image).** 3 robots, each with its own Nav2 safety chain and
-SwarmX agent, coordinated only over `/swarmx/p2p` via rmw_zenoh. They delivered all 6 tasks with no
-false obstacle reports.
+| robots | SwarmX delivered | stop-and-wait delivered | reduction | SwarmX collisions |
+|---:|---:|---:|---:|---:|
+| 10 | 30/30 | 30/30 | 9.3% | 0 |
+| 30 | 90/90 | 85/90 | 54.2% | 0 |
+| 50 | 150/150 | 119/150 | 77.7% | 0 |
+
+**Gazebo Harmonic end-to-end** (`scripts/gazebo_e2e.sh`). Each robot runs its own Nav2 stack and SwarmX agent over rmw_zenoh; contacts are measured from Gazebo's true poses. All runs passed:
+
+- 3 robots with ground-truth localization and the direct executor: 6/6 delivered, 0 contacts.
+- 3 robots with **AMCL**: 6/6 delivered, 0 contacts.
+- 3 robots with the **Nav2 executor**: 6/6 delivered, 0 contacts.
+- 5 robots on **overlapping paths**: 10/10 delivered, 0 contacts.
+
+Full details and reproduction commands are in [docs/RESULTS.md](docs/RESULTS.md).
 
 ## How it works (short)
 
@@ -134,7 +145,13 @@ false obstacle reports.
 
 ## Status and known limitations
 
-- **Verified:** core algorithms and tests; the benchmark; the UDP multi-process fleet; the Gazebo fleet (`localization:=static`, `executor:=direct`, rmw_zenoh with a router per host); the dashboard (simulation and ROS).
-- **Written but not yet exercised end-to-end in Gazebo:** AMCL and slam_toolbox localization modes, the `nav2` executor, and physical pallets spawned from the dashboard.
-- **ARGoS** (`argos/`): builds and runs headless (10 foot-bots, 0 collisions). In the first 30-task run, 27 tasks were delivered, so work is still in progress.
-- Pure router-less Zenoh peer mode (`swarmx_zenoh_peer.env`) works for small graphs. With about 40 processes on one host, some peers missed discovery, which is why the router-per-robot topology is the default.
+- **Verified:**
+  - The core algorithms (33 tests) and the benchmark.
+  - The multi-process UDP fleet.
+  - The Gazebo fleet with ground-truth and AMCL localization and with the direct and Nav2 executors, over rmw_zenoh with one router per host.
+  - The dashboard, in simulation and ROS modes.
+  - ARGoS at 10, 30 and 50 robots.
+- **Written but not yet exercised end-to-end:** slam_toolbox mapping and localization, and physical pallets spawned from the ROS dashboard (`gz service`).
+- **AMCL in rack aisles** needs all beams and a low odometry-noise model (tuned in `swarmx_navigation/config/localization.yaml`). Real warehouses usually add fiducials or reflectors.
+- **Pure router-less Zenoh peer mode** (`swarmx_zenoh_peer.env`) works for small graphs. With about 40 processes on one host, some peers missed discovery, which is why the router-per-robot topology is the default.
+- **The lightweight simulator uses holonomic discs.** Differential-drive behaviour is exercised in Gazebo and ARGoS.
