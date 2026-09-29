@@ -1,0 +1,3 @@
+# Recording layer: ROS 2 deps image + ffmpeg (H.264) for demo videos
+FROM swarmx-deps:jazzy
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
